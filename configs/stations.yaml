@@ -1,0 +1,67 @@
+# Station registry for FM_ice.
+# All fields below were verified against the live USGS HIVIS API
+# (https://api.waterdata.usgs.gov/nims/v0/cameras?siteId=<id>) on 2026-06-20.
+#
+# IMPORTANT FINDINGS (read before downloading):
+#   1. Camera cadence is HOURLY (ingest.intr = 60), not 15-min. The 4-hour /
+#      16-frame clip in the research plan assumes 15-min images and does not hold.
+#      See DATA.md "Cadence" and IMPLEMENTATION_PLAN.md Phase 1.
+#   2. Bismarck imagery starts 2024-03-13, so only ~2 winters exist. Cedarburg
+#      starts 2022-09-12, ~4 winters. Use Cedarburg to train, Bismarck to test.
+#   3. Times in HIVIS filenames are UTC (the trailing Z). Both stations sit in
+#      US/Central. Align temperature and stage in UTC, convert for reporting.
+
+defaults:
+  # Freeze season window to download per winter. Trim to cut summer volume.
+  season_start_md: "11-01"   # Nov 1
+  season_end_md:   "05-15"   # May 15 (next year)
+  image_size: overlay        # overlay = full-size, small = 720px, thumb = ~200px
+  hivis_api_base: "https://api.waterdata.usgs.gov/nims/v0"
+  nwis_iv_base:   "https://waterservices.usgs.gov/nwis/iv/"
+  nwis_dv_base:   "https://waterservices.usgs.gov/nwis/dv/"
+  iem_asos_base:  "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py"
+
+stations:
+
+  cedarburg:
+    role: train                 # primary station, longest record
+    nwis_id: "04086600"
+    name: "Milwaukee River near Cedarburg, WI"
+    timezone: "US/Central"
+    cameras:
+      primary:
+        cam_id: "WI_Milwaukee_River_near_Cedarburg"
+        ingest_period: "247"     # 24/7 capture
+        interval_min: 60
+        archive_start: "2022-09-12"
+      downstream:
+        cam_id: "WI_Milwaukee_River_near_Cedarburg_DOWNSTREAM"
+        ingest_period: "daylight"
+        interval_min: 60
+        archive_start: "2023-01-06"
+    # Nearest ASOS for air temperature (IEM network WI_ASOS).
+    asos_station: "MWC"          # Milwaukee Lawrence J Timmerman, ~17 km S
+    asos_alternates: ["ETB", "MKE"]   # West Bend ~18 km N; Mitchell Intl ~30 km SE
+    winters: ["2022-2023", "2023-2024", "2024-2025", "2025-2026"]
+
+  bismarck:
+    role: transfer              # held-out station, short record
+    nwis_id: "06342500"
+    name: "Missouri River at Bismarck, ND"
+    timezone: "US/Central"
+    cameras:
+      primary:
+        cam_id: "ND_Missouri_River_at_Bismarck"
+        ingest_period: "247"
+        interval_min: 60
+        archive_start: "2024-03-13"
+    asos_station: "BIS"          # Bismarck Municipal, co-located
+    asos_alternates: []
+    winters: ["2024-2025", "2025-2026"]
+
+# Split policy (RIce-Net style):
+#   - Train/val on Cedarburg, holding out its most recent full winter for test.
+#   - Bismarck is the entirely-held-out station for the transfer test.
+splits:
+  test_winter: "2024-2025"      # held-out winter on the train station
+  transfer_station: "bismarck"  # never seen in training

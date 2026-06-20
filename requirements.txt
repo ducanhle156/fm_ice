@@ -1,0 +1,27 @@
+# Core (data download + assembly). Light, runs anywhere.
+requests>=2.31
+pyyaml>=6.0
+numpy>=1.24
+pandas>=2.0
+pyarrow>=14.0        # parquet clip manifests
+pillow>=10.0
+
+# Foundation-model feature extraction (GPU node / CCAST).
+# Install torch matching the cluster CUDA module, then the rest.
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+torch>=2.2
+transformers>=4.52   # V-JEPA 2 (AutoModel/AutoVideoProcessor) and DINOv2
+huggingface_hub>=0.23
+
+# RIce-Net segmentation baseline.
+segmentation-models-pytorch>=0.3.3
+albumentations>=1.4
+
+# Change-point baselines.
+Rbeast>=0.1.16       # BEAST offline
+ruptures>=1.1.9      # PELT, optional alternative to BOCPD
+
+# Analysis / figures (H3 embedding separation, UMAP).
+scikit-learn>=1.3
+umap-learn>=0.5
+matplotlib>=3.7

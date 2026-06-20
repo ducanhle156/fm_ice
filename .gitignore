@@ -1,0 +1,31 @@
+# Data and heavy artifacts: never commit. Cache embeddings, not images.
+data/raw/
+data/interim/
+data/processed/
+data/cache/
+results/
+*.npy
+*.parquet
+*.pt
+*.ckpt
+
+# Stray model checkpoints
+sam2_hiera_*.pt
+*.mp4
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# Keep sample images out of the repo root; move to notebooks/exploratory if needed
+/test*.png
+/test*.jpg
+/WI_Milwaukee_River_*.jpg
+final_mask.png
