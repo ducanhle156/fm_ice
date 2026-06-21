@@ -14,6 +14,9 @@ row-aligned manifest, so the temporal head can index clips directly.
 Usage (GPU node):
   python -m fm_ice.features.extract_embeddings \
       --station cedarburg --winter 2024-2025 --encoder vjepa2 --device cuda
+  # smoke test on the first N clips (tagged output, never overwrites the cache):
+  python -m fm_ice.features.extract_embeddings \
+      --station cedarburg --winter 2022-2023 --encoder vjepa2 --device cuda --limit 32
 
 Output:
   data/cache/<encoder>/<station>/<winter>.npy        (N_clips, D)
@@ -88,7 +91,7 @@ def extract_dinov2(clips: pd.DataFrame, images_dir: Path, hf_id: str, n_frames: 
     return np.stack(embs, axis=0)
 
 
-def run(station: str, winter: str, encoder: str, device: str) -> None:
+def run(station: str, winter: str, encoder: str, device: str, limit: int | None = None) -> None:
     cfg_s = load_yaml("stations.yaml")
     cfg_p = load_yaml("pipeline.yaml")
     paths, clip = cfg_p["paths"], cfg_p["clip"]
@@ -99,7 +102,25 @@ def run(station: str, winter: str, encoder: str, device: str) -> None:
     if not clip_manifest.exists():
         raise SystemExit(f"Missing {clip_manifest}. Run assemble_clips first.")
     clips = pd.read_parquet(clip_manifest)
+    if limit:
+        # Smoke test: only the first `limit` clips. Output is tagged so it is never
+        # mistaken for (or overwritten by) the full cache.
+        clips = clips.head(limit).copy()
     images_dir = Path(paths["raw"]) / "images" / station / cam_id
+
+    # Report the device actually used (so a GPU smoke run proves the GPU was seen).
+    try:
+        import torch
+        dev_note = (f"cuda:{torch.cuda.get_device_name(0)}"
+                    if device == "cuda" and torch.cuda.is_available() else device)
+        if device == "cuda" and not torch.cuda.is_available():
+            print("[embed] WARNING: --device cuda but torch.cuda.is_available() is False; using CPU.")
+            device = "cpu"
+    except ImportError:
+        raise SystemExit("torch is not installed in this environment. Install torch + "
+                         "transformers (see job.pbs prerequisites) before extracting.")
+    print(f"[embed:{encoder}] {station} {winter}: {len(clips)} clips on {dev_note}, "
+          f"loading {enc_cfg['hf_id']} ...")
 
     if encoder == "vjepa2":
         emb = extract_vjepa2(clips, images_dir, enc_cfg["hf_id"], clip["frames"], clip["resize"], device)
@@ -108,11 +129,12 @@ def run(station: str, winter: str, encoder: str, device: str) -> None:
     else:
         raise SystemExit(f"Unknown encoder {encoder}")
 
+    stem = winter if not limit else f"{winter}_smoke{limit}"
     out_dir = Path(paths["cache"]) / encoder / station
     out_dir.mkdir(parents=True, exist_ok=True)
-    np.save(out_dir / f"{winter}.npy", emb)
-    clips[["clip_id", "t_start_utc", "t_end_utc"]].to_csv(out_dir / f"{winter}_index.csv", index=False)
-    print(f"[embed:{encoder}] {station} {winter}: {emb.shape} -> {out_dir / (winter + '.npy')}")
+    np.save(out_dir / f"{stem}.npy", emb)
+    clips[["clip_id", "t_start_utc", "t_end_utc"]].to_csv(out_dir / f"{stem}_index.csv", index=False)
+    print(f"[embed:{encoder}] {station} {winter}: {emb.shape} -> {out_dir / (stem + '.npy')}")
 
 
 def main() -> None:
@@ -121,8 +143,10 @@ def main() -> None:
     ap.add_argument("--winter", required=True)
     ap.add_argument("--encoder", default="vjepa2", choices=["vjepa2", "dinov2"])
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--limit", type=int, default=None,
+                    help="smoke test: process only the first N clips (tagged output)")
     args = ap.parse_args()
-    run(args.station, args.winter, args.encoder, args.device)
+    run(args.station, args.winter, args.encoder, args.device, args.limit)
 
 
 if __name__ == "__main__":

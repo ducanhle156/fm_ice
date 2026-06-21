@@ -300,17 +300,56 @@ the V-JEPA embedding stream only (the table collapses BEAST/BOCPD labels across 
 To reproduce: regenerate `results/changepoint_events.csv` (vjepa2; bocpd pc1+diffnorm,
 beast pc1; both cedarburg winters) then `python -m fm_ice.evaluation.phase4_table`.
 
-## Phases 5-6 — CODE COMPILED (2026-06-21), experiments NOT yet run
-Written in parallel by sub-agents; all import-clean, CLIs parse, cheap self-tests pass.
-- **Phase 4 (DINOv2 ablation half):** runs via `train.py --encoder dinov2` (done; in the table).
-- **Phase 5:** `models/transfer.py` (train head on BOTH cedarburg winters, eval on
-  bismarck 2024-2025, no retrain/no-leak scaler, report transfer gap vs phase3_summary).
-- **Phase 6:** `evaluation/metrics.py` (+per_frame_agreement, per_frame_auc,
-  event_f1_at_tolerances), `evaluation/evaluate.py` (master metrics -> phase6_metrics.csv),
-  `evaluation/error_analysis.py` (error rate by night/glare/quality regime),
-  `evaluation/figures.py` (H3 UMAP + event timelines, matplotlib Agg).
-NOTE: these are SCAFFOLDS to refine when running each phase. matplotlib installed in
-fm-ice (2026-06-21).
+## Phase 5 — transfer test DONE (2026-06-21), MVP FROZEN
+Refined `models/transfer.py`: `_cedarburg_loo_anchor` now reads `phase3_summary.csv`
+correctly (exact config match + per-winter onset/breakup means; takes `temp_guard`) — it
+previously read non-existent columns and mixed temporal/perframe/guard rows, so the gap
+came out blank. Pred dump now written under the CANONICAL
+`phase3_pred_<enc>_bismarck_<winter>_<head>[_guard].csv` schema so Phase 6 scores the
+held-out station with no code change; `phase5_transfer_*` tagged per config (no overwrite);
+gap defined on `usgs_ice_flag` only; added `--selftest`. New `evaluation/phase5_report.py`
+-> `phase5_summary.csv` (mirrors `phase3_report.py`).
+
+Protocol (no leakage): head + per-frame probe + FeatureScaler fit on BOTH cedarburg winters
+ONLY; bismarck 2024-2025 transformed + predicted, never trained on. Full matrix
+(vjepa2/dinov2 x guard/no-guard, TCN). Timing error vs USGS ice flag (hours):
+
+| config                    | bismarck onset | bismarck breakup | cedarburg LOO mean | gap (mean) |
+|---------------------------|---------------:|-----------------:|-------------------:|-----------:|
+| vjepa2 / tcn / +guard     | 18             | 122              | 122                | -52        |
+| vjepa2 / tcn (no guard)   | 18             | 122              | 297                | -227       |
+| dinov2 / tcn (+/- guard)  | 22             | 150              | 191                | -105       |
+
+Findings (honest):
+- **Transfer succeeds.** A cedarburg-only head predicts bismarck onset within 18 h (V-JEPA)
+  / 22 h (DINOv2) and breakup within 122 h / 150 h, no retraining. Bismarck mean timing
+  (70 h V-JEPA, 86 h DINOv2) is LOWER than the cedarburg LOO mean, so the gap is negative —
+  but largely because the cedarburg LOO is inflated by the Nov-2022 onset confound, which
+  bismarck does not share. The absolute bismarck numbers are the real story.
+- **Onset transfers BETTER than breakup — the OPPOSITE of the interim prediction.** Onset is
+  essentially solved on the unseen station (18-22 h); breakup is the harder transfer
+  (122-150 h vs ~2-22 h on cedarburg).
+- **The freezing guard is cedarburg-specific.** Bismarck onset = 18 h with OR without the
+  guard (icier 52%, colder, no warm-November false positive). The guard only moves the
+  cedarburg anchor — on bismarck the head needs no freezing prior.
+- **H2 on the held-out station is CLEAN and guard-independent:** V-JEPA beats DINOv2 on
+  bismarck (onset 18 vs 22 h, breakup 122 vs 150 h, mean 70 vs 86 h, pf_auc 0.995 vs 0.981),
+  and unlike Cedarburg's GATE B this does NOT rest on the guard. The clearest V-JEPA>DINOv2
+  signal in the project.
+- **H1 on transfer:** temporal head >> per-frame probe on bismarck onset (18 h vs 306 h at
+  the 48 h event rule) — temporal modeling generalizes.
+
+Outputs: `results/phase5_summary.csv`, `results/phase5_transfer_<enc>_<head>[_guard].csv`,
+`results/phase3_pred_<enc>_bismarck_2024-2025_<head>[_guard].csv`. Logs in `logs/phase5/`.
+
+## Phase 6 — metrics + error analysis DONE (now incl. bismarck)
+`evaluation/evaluate.py` -> `phase6_metrics.csv` (80 rows: all cedarburg LOO configs +
+bismarck transfer; timing + event-F1@24/48/72 + per-frame acc/AUC vs both references).
+`evaluation/error_analysis.py` -> `phase6_error_analysis.csv` (60 regime rows). **Night**
+drives per-frame error overall (+2.8 pp vs day; +2.2 pp on bismarck); glare is negative
+(glare clips skew to daytime open water). Bismarck pf_auc 0.99 (V-JEPA) / 0.98 (DINOv2):
+static separability (H3) transfers. `evaluation/figures.py` (H3 UMAP + timelines) optional.
+matplotlib installed in fm-ice. These were SCAFFOLDS; refined and run this pass.
 
 ## RIce-Net — STILL PAUSED (user decision 2026-06-21)
 Weights downloaded (data/external/ricenet/segmentation_model.pth, 97 MB, official
@@ -321,9 +360,12 @@ now". To resume: authorize the unpickle + pin smp to RIce-Net's version OR rebui
 PAN(resnet50,2) from state_dict.
 
 ## Later phases
-- Phase 4 DONE (GATE B called, guard-dependent V-JEPA win). Phase 5 transfer experiment
-  (code ready). Phase 6 eval + figures.
-- After Phase 5: MVP freeze.
+- Phase 4 DONE (GATE B called, guard-dependent V-JEPA win). Phase 5 transfer DONE
+  (clean guard-independent V-JEPA>DINOv2 on the held-out station). Phase 6 metrics +
+  error analysis DONE; figures optional.
+- **MVP FROZEN (2026-06-21).** Per the plan, only evaluation, figures, and writing proceed
+  from here. Remaining optional/unblocked-only work: RIce-Net anchor (paused), Phase 6
+  figures, H4 forecast head (stretch, cut if it threatens the freeze).
 
 ---
 

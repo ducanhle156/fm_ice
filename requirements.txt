@@ -1,10 +1,11 @@
-# Core (data download + assembly). Light, runs anywhere.
+# Core (data download + assembly + QC). Light, runs anywhere (CPU).
 requests>=2.31
 pyyaml>=6.0
 numpy>=1.24
 pandas>=2.0
 pyarrow>=14.0        # parquet clip manifests
 pillow>=10.0
+opencv-python-headless>=4.8   # per-frame QC (night/glare/occlusion) + RIce-Net preprocessing
 
 # Foundation-model feature extraction (GPU node / CCAST).
 # Install torch matching the cluster CUDA module, then the rest.

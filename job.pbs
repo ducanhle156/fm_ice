@@ -1,0 +1,75 @@
+#!/bin/bash
+#PBS -q gpus
+#PBS -N fmice-smoke
+#PBS -l select=1:mem=32gb:ncpus=4:ngpus=1
+#PBS -l walltime=01:00:00
+#PBS -l place=scatter
+#PBS -W group_list=x-ccast-prj-cle
+#PBS -o /mmfs1/projects/chau.le/fm_ice/logs/smoke.out
+#PBS -e /mmfs1/projects/chau.le/fm_ice/logs/smoke.err
+
+# ===========================================================================
+# FM_ice GPU SMOKE TEST: extract V-JEPA embeddings for the first 32 clips of one
+# winter, to confirm the env + checkpoint + GPU path before the full run.
+# Embedding extraction is the ONLY GPU step; everything downstream is CPU.
+#
+# Prerequisites are ALREADY DONE in the fm-ice env (verified 2026-06-20 on a
+# login node): torch 2.12.1+cu130, transformers 5.12.1, numpy/pandas/pyarrow/
+# pillow/scipy/scikit-learn installed; the checkpoint is cached under HF_HOME
+# below. A 1-clip CPU dry run produced a (1,1024) embedding, so the code path is
+# verified. If you ever rebuild the env, redo:
+#   source /mmfs1/projects/chau.le/Computer_Vision_FM/miniconda3/etc/profile.d/conda.sh
+#   conda activate fm-ice
+#   PYTHONNOUSERSITE=1 pip install torch transformers huggingface_hub \
+#       numpy pandas pyarrow pillow scipy scikit-learn
+#   HF_HOME=/mmfs1/projects/chau.le/fm_ice/data/external/hf_home PYTHONNOUSERSITE=1 \
+#       hf download facebook/vjepa2-vitl-fpc64-256
+# ===========================================================================
+
+set -euo pipefail
+
+cd /mmfs1/projects/chau.le/fm_ice
+
+# Activate the project conda env (Python 3.12, fm_ice installed with pip -e .).
+source /mmfs1/projects/chau.le/Computer_Vision_FM/miniconda3/etc/profile.d/conda.sh
+conda activate fm-ice
+
+# CRITICAL: isolate from ~/.local user-site. It contains a stale nvidia-nccl
+# (cu12) that shadows fm-ice's bundled nccl and makes torch fail to import with
+# "undefined symbol: ncclCommResume". With this set, fm-ice's self-contained
+# stack is used. /mmfs1 is shared, so this matters on the GPU node too.
+export PYTHONNOUSERSITE=1
+
+# HF checkpoint lives on the shared project filesystem; compute nodes have no
+# internet, so use the pre-downloaded cache and stay offline.
+export HF_HOME=/mmfs1/projects/chau.le/fm_ice/data/external/hf_home
+export HF_HUB_OFFLINE=1
+export TOKENIZERS_PARALLELISM=false
+
+echo "host=$(hostname)  date=$(date)"
+python -c "import torch; print('torch', torch.__version__, '| cuda?', torch.cuda.is_available(),
+           '|', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no-gpu')"
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
+
+# --- SMOKE: first 32 clips of one winter -> data/cache/vjepa2/.../*_smoke32.npy
+python -m fm_ice.features.extract_embeddings \
+    --station cedarburg --winter 2022-2023 --encoder vjepa2 --device cuda --limit 32
+
+echo "[smoke] done. Check data/cache/vjepa2/cedarburg/2022-2023_smoke32.npy (expect shape (32,1024))."
+
+# ===========================================================================
+# FULL RUN (after the smoke looks right): drop --limit, raise walltime
+# (#PBS -l walltime=08:00:00), and process every assembled station-winter.
+# On a single GPU these run sequentially:
+#
+#   for sw in "cedarburg 2022-2023" "cedarburg 2023-2024" "bismarck 2024-2025"; do
+#     set -- $sw
+#     python -m fm_ice.features.extract_embeddings --station $1 --winter $2 \
+#         --encoder vjepa2 --device cuda
+#   done
+#   # repeat with --encoder dinov2 for the H2 ablation.
+#
+# To PARALLELIZE across GPU nodes, submit a PBS job array (one sub-job per
+# station-winter): `qsub -J 0-2 job_array.pbs`, indexing the list with
+# $PBS_ARRAY_INDEX. One GPU per sub-job; they run concurrently on separate nodes.
+# ===========================================================================

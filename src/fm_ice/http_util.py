@@ -39,17 +39,29 @@ def get(
     timeout: int = 60,
     stream: bool = False,
 ) -> requests.Response:
-    """GET with exponential backoff on 429/5xx and transient network errors."""
+    """GET with exponential backoff on 429/5xx and transient network errors.
+
+    Non-retryable client errors (4xx other than 429, e.g. a 404 for a file the
+    listing advertised but S3 does not actually have) are raised immediately as
+    requests.HTTPError so the caller can skip that item without burning retries.
+    """
+    RETRYABLE = (429, 500, 502, 503, 504)
     last_exc = None
     for attempt in range(retries):
         try:
             r = s.get(url, params=params, timeout=timeout, stream=stream)
-            if r.status_code in (429, 500, 502, 503, 504):
+            if r.status_code in RETRYABLE:
                 raise requests.HTTPError(f"{r.status_code} {r.reason}", response=r)
             r.raise_for_status()
             return r
-        except (requests.RequestException,) as e:
+        except requests.HTTPError as e:
+            # Only retry the retryable statuses; surface real 4xx right away.
+            status = e.response.status_code if e.response is not None else None
+            if status not in RETRYABLE:
+                raise
             last_exc = e
-            sleep = backoff ** attempt
-            time.sleep(min(sleep, 30))
+            time.sleep(min(backoff ** attempt, 30))
+        except requests.RequestException as e:
+            last_exc = e
+            time.sleep(min(backoff ** attempt, 30))
     raise RuntimeError(f"GET failed after {retries} attempts: {url}\n  last error: {last_exc}")

@@ -30,6 +30,8 @@ import re
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+import requests
+
 from fm_ice.config import load_yaml, winter_bounds
 from fm_ice.http_util import get, session
 
@@ -106,27 +108,49 @@ def download_window(station_key: str, cam_role: str, winter: str, size: str,
     out_dir = out_root / station_key / cam_id
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = out_dir / "_manifest.csv"
-    new_rows = []
-    for i, fn in enumerate(files, 1):
-        dst = out_dir / fn
-        url = base_dir + fn
-        if not dst.exists():
-            r = get(s, url, stream=True)
-            with open(dst, "wb") as fh:
-                for chunk in r.iter_content(chunk_size=1 << 16):
-                    fh.write(chunk)
-        ts = parse_ts(fn)
-        new_rows.append([fn, ts.isoformat(), url, dst.stat().st_size])
-        if i % 250 == 0:
-            print(f"  ... {i}/{len(files)}")
+
+    # Resume-safe: skip filenames already recorded, and append+flush each row as
+    # it is fetched so an interrupted run leaves a consistent (partial) manifest
+    # instead of orphaning downloaded files.
+    recorded = set()
+    if manifest.exists():
+        with open(manifest, newline="") as fh:
+            for row in csv.reader(fh):
+                if row and row[0] != "filename":
+                    recorded.add(row[0])
 
     write_header = not manifest.exists()
-    with open(manifest, "a", newline="") as fh:
-        w = csv.writer(fh)
+    n_written = 0
+    with open(manifest, "a", newline="") as mf:
+        w = csv.writer(mf)
         if write_header:
             w.writerow(["filename", "timestamp_utc", "url", "bytes"])
-        w.writerows(new_rows)
-    print(f"[done] {len(new_rows)} files -> {out_dir}")
+        n_missing = 0
+        for i, fn in enumerate(files, 1):
+            if fn in recorded:
+                continue
+            dst = out_dir / fn
+            url = base_dir + fn
+            if not dst.exists():
+                try:
+                    r = get(s, url, stream=True)
+                except (requests.HTTPError, RuntimeError) as e:
+                    # The listing sometimes advertises files S3 does not have
+                    # (404). Skip the bad frame; do not abort the whole winter.
+                    n_missing += 1
+                    print(f"  [skip] {fn}: {e}")
+                    continue
+                with open(dst, "wb") as fh:
+                    for chunk in r.iter_content(chunk_size=1 << 16):
+                        fh.write(chunk)
+            ts = parse_ts(fn)
+            w.writerow([fn, ts.isoformat(), url, dst.stat().st_size])
+            mf.flush()
+            n_written += 1
+            if i % 250 == 0:
+                print(f"  ... {i}/{len(files)}")
+    print(f"[done] {n_written} new files ({len(recorded)} already recorded, "
+          f"{n_missing} missing/skipped) -> {out_dir}")
 
 
 def main() -> None:

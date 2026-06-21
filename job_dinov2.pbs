@@ -1,0 +1,46 @@
+#!/bin/bash
+#PBS -q gpus
+#PBS -N fmice-dinov2
+#PBS -l select=1:mem=48gb:ncpus=4:ngpus=1
+#PBS -l walltime=04:00:00
+#PBS -l place=scatter
+#PBS -W group_list=x-ccast-prj-cle
+#PBS -o /mmfs1/projects/chau.le/fm_ice/logs/dinov2_full.out
+#PBS -e /mmfs1/projects/chau.le/fm_ice/logs/dinov2_full.err
+
+# ===========================================================================
+# FM_ice H2 ABLATION: per-frame DINOv2 (facebook/dinov2-large), mean-pooled to
+# one embedding per clip, all three paper winters. Same clip definition and same
+# downstream probe as the V-JEPA run (job_full.pbs) -- this is the apples-to-
+# apples image-FM comparison for H2 (does DINOv2 tie or beat V-JEPA?).
+# Output: data/cache/dinov2/<station>/<winter>.npy  +  <winter>_index.csv
+# ===========================================================================
+
+set -euo pipefail
+
+cd /mmfs1/projects/chau.le/fm_ice
+
+source /mmfs1/projects/chau.le/Computer_Vision_FM/miniconda3/etc/profile.d/conda.sh
+conda activate fm-ice
+
+# Isolate from ~/.local (stale nccl breaks torch); use the offline checkpoint cache.
+export PYTHONNOUSERSITE=1
+export HF_HOME=/mmfs1/projects/chau.le/fm_ice/data/external/hf_home
+export HF_HUB_OFFLINE=1
+export TOKENIZERS_PARALLELISM=false
+
+echo "host=$(hostname)  date=$(date)"
+python -c "import torch; print('torch', torch.__version__, '| cuda?', torch.cuda.is_available(),
+           '|', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no-gpu')"
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
+
+# Full DINOv2 extraction over every assembled station-winter (sequential, 1 GPU).
+for sw in "cedarburg 2022-2023" "cedarburg 2023-2024" "bismarck 2024-2025"; do
+    set -- $sw
+    echo "=== extract $1 $2 ==="
+    python -m fm_ice.features.extract_embeddings \
+        --station "$1" --winter "$2" --encoder dinov2 --device cuda
+done
+
+echo "[full] DINOv2 embeddings cached under data/cache/dinov2/. Next: CPU probe"
+echo "       python -m fm_ice.evaluation.probe_separability --encoder dinov2 --all"
