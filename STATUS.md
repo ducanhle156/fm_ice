@@ -18,7 +18,8 @@ external model + weights — see "Open decision" below.
 2. DONE — CLAUDE.md repointed to plan v2; IMPLEMENTATION_PLAN.md marked SUPERSEDED.
 3. DONE — guard audit + AFDD re-derivation (section below).
 4. DONE — entropy_jam.py smoke test (section below).
-5. pending — chippewa_bruce + mohawk_schenectady stations + downloads.
+5. DONE — chippewa_bruce + mohawk_schenectady added; downloads running in the
+   background (section below).
 6. pending — degree-day baseline; BOCPD row verification.
 7. pending — RIce-Net, hard half-day cap.
 
@@ -96,6 +97,49 @@ high-entropy clip. Outputs: `results/entropy_jam/<station>_<winter>_entropy.npy`
 (row-aligned to the pred CSVs), `detections.json` (frozen params + windows).
 Caveat for the paper: on the calibration winters ~1% of clips exceed tau_H by
 construction; bismarck (and future stations) are the honest FAR rows.
+
+## New stations (plan-v2 Sec. 3 / week 1) — ADDED 2026-07-03
+
+Both cameras verified live via the HIVIS siteId query the plan mandates.
+
+- `chippewa_bruce` (05356500): WI_Chippewa_River_near_Bruce, 24/7, 60-min,
+  archive 2022-10-06, 4 winters. ASOS RCX (Ladysmith, 21 km).
+- `mohawk_schenectady` (01354500): the site lists 15 cameras; 13 are hidden PTZ
+  presets stale since Nov-Dec 2024. Live fixed camera
+  NY_Mohawk_River_at_Freemans_Bridge_at_Schenectady runs daylight/60-min since
+  **2023-09-18**, so THREE camera winters exist (plan registry said 2 from
+  2024-09-27 — that date belongs to the stale PTZ cams). Second live viewpoint
+  NY_Mohawk_River_at_Stockade_at_Schenectady (24/7, 5-min, 2024-08-21) recorded
+  as `stockade` role, not downloaded (post-freeze IDEAS row). ASOS: SCH (2 km)
+  is part-time (~8 obs/day, warm-biased daily means) → primary is ALB (13 km,
+  hourly 24/7); per-station `usgs_dv_utc_offset_hours: -5` (EST vs the CST
+  default), honored by a new `config.station_utc_offset_hours` helper wired
+  into assemble_clips, reference_events, changepoint_events, degree_days.
+- `defaults.image_size` = `small` (plan v2 fixed decision); download_images now
+  reads the config default instead of hardcoding overlay. Caveat: existing
+  cedarburg/bismarck caches were extracted from overlay-tier frames; plan v2
+  forbids re-extraction.
+- Downloads: stage/temperature/ice-flags/images for all winters of both
+  stations running in the background → logs/download_new_stations_20260703.log.
+
+**Ice-flag gate (plan-v2 Sec. 11, week 1):** flagged days / contiguous blocks /
+longest block, per winter:
+
+| station-winter | flagged | blocks | longest | gate |
+|---|---|---|---|---|
+| chippewa_bruce 2022-2023 | 120 | 3 | 116 | PASS |
+| chippewa_bruce 2023-2024 | 91 | 3 | 56 | PASS |
+| chippewa_bruce 2024-2025 | 106 | 1 | 106 | PASS |
+| chippewa_bruce 2025-2026 | 111 | 1 | 111 | PASS |
+| mohawk_schenectady 2023-2024 | 0 | 0 | 0 | FAIL |
+| mohawk_schenectady 2024-2025 | 0 | 0 | 0 | FAIL |
+| mohawk_schenectady 2025-2026 | 75 | 3 | 69 | PASS |
+
+Mohawk published no ice qualifier at all in its first two camera winters.
+Per the plan's pre-written fallback: manual dates from the spot audit for
+test-only stations. Mohawk is `event_test` — its C2 references come from the
+CRREL/dashboard event audit (week 2), so C2 is unaffected; only its
+onset/breakup rows need audited dates. All 4 chippewa (train) winters pass.
 
 ---
 

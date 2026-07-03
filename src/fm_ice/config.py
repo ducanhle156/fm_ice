@@ -18,6 +18,17 @@ def load_yaml(name: str) -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def station_utc_offset_hours(station: str) -> int:
+    """usgs_dv_utc_offset_hours for a station: per-station override wins over
+    the default. USGS daily values (and our reference events at local midnight)
+    use the LOCAL STANDARD-TIME day, which differs per timezone -- e.g.
+    mohawk_schenectady is EST (-5) while the WI/ND stations are CST (-6)."""
+    cfg = load_yaml("stations.yaml")
+    st = cfg["stations"][station]
+    return int(st.get("usgs_dv_utc_offset_hours",
+                      cfg["defaults"]["usgs_dv_utc_offset_hours"]))
+
+
 def winter_bounds(winter: str, start_md: str, end_md: str) -> tuple[date, date]:
     """Map a winter label like '2024-2025' to concrete start/end dates.
 
