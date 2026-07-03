@@ -4,21 +4,22 @@ This is the central H2 figure for a CV audience: ONE table comparing every metho
 on onset/breakup timing error against the solid USGS ice-flag reference, per
 held-out cedarburg winter (leave-one-winter-out) plus a mean.
 
-Rows (methods), TCN head family, guard on and off shown side by side:
-  V-JEPA temporal (TCN)          temporal head on vjepa2, no freezing guard
-  V-JEPA temporal (TCN +guard)   temporal head on vjepa2, +freezing guard
-  DINOv2 temporal (TCN)          temporal head on dinov2, no freezing guard
-  DINOv2 temporal (TCN +guard)   temporal head on dinov2, +freezing guard
-  per-frame (<enc>)              the best per-frame-probe anchor (lower mean wins)
-  BOCPD-pc1                      label-free change point, PC1 signal (changepoint_events)
-  BOCPD-diffnorm                 label-free change point, diffnorm signal
-  BEAST                          label-free offline change point
-  RIce-Net                       the threshold baseline, IF results/ricenet_events.csv exists
+Rows (methods), TCN head family, three guard variants side by side (guard audit,
+docs/FM_ice_plan_v2.md addendum 2):
+  V-JEPA temporal (TCN)                 no guard (primary evidence row)
+  V-JEPA temporal (TCN +meanair guard)  LEGACY mean-air guard (published Phase 3)
+  V-JEPA temporal (TCN +AFDD guard)     onset-only AFDD guard, train-calibrated
+  DINOv2 temporal (...)                 same three variants
+  per-frame (<enc>)                     per-frame-probe anchor, both encoders
+  BOCPD-pc1 / BOCPD-diffnorm / BEAST    label-free change points
+  RIce-Net                              threshold baseline, IF ricenet_events.csv exists
+  degree-day                            AFDD/ATDD control, IF degreeday_events.csv exists
 
 Inputs (results/):
-  phase3_timing_<enc>_<head>[_guard].csv   head/guard-tagged temporal+per-frame rows
-                                           (the un-tagged phase3_timing_<enc>.csv files
-                                           are STALE pre-grid runs and are ignored)
+  reextract/timing.csv                     guard-audited temporal+per-frame rows
+                                           (preferred; fm_ice.evaluation.reextract_events)
+  phase3_timing_<enc>_<head>[_guard].csv   fallback when reextract is absent (its
+                                           " +guard" labels predate the audit)
   changepoint_events.csv                   (label-free events)
   reference_events.csv                     (usgs_ice_flag truth)
   ricenet_events.csv                       (OPTIONAL; handled gracefully)
@@ -26,9 +27,11 @@ Inputs (results/):
 For changepoint/ricenet event rows the timing error is computed here against the
 usgs_ice_flag reference via evaluation.metrics.timing_error_hours.
 
-GATE B: compares V-JEPA-temporal vs DINOv2-temporal mean timing error at matched
-configs (TCN+guard and TCN no-guard) and prints a recommendation, flagging that the
-V-JEPA win is guard-dependent. The human makes the call; this lays out the comparison.
+REPORTING RULE (plan v2 addendum 3): onset and breakup are averaged separately;
+there is NO pooled onset+breakup mean anywhere in the table or the gate.
+
+GATE B: compares V-JEPA-temporal vs DINOv2-temporal timing error at matched
+configs, onset and breakup separately, per guard variant. The human makes the call.
 
 Output: results/phase4_h2_table.csv
 
@@ -91,19 +94,26 @@ def load_references(results_dir: Path) -> dict:
 
 
 def _err_row(method: str, per_winter: dict, winters: list[str]) -> dict:
-    """Assemble one table row from {winter: {'onset':h,'breakup':h}}."""
+    """Assemble one table row from {winter: {'onset':h,'breakup':h}}.
+
+    Onset and breakup are averaged SEPARATELY, never pooled: a pooled mean lets
+    excellent breakup timing hide a broken onset (docs/FM_ice_plan_v2.md,
+    addendum item 3 -- the "122 h mean" lesson).
+    """
     row = {"method": method}
-    errs = []
+    onsets, breakups = [], []
     for w in winters:
         e = per_winter.get(w, {})
         on = e.get("onset", np.nan)
         br = e.get("breakup", np.nan)
         row[f"{w} onset"] = on
         row[f"{w} breakup"] = br
-        for v in (on, br):
-            if not (v is None or (isinstance(v, float) and np.isnan(v))):
-                errs.append(v)
-    row["mean_err_h"] = round(float(np.mean(errs)), 1) if errs else np.nan
+        if not (on is None or (isinstance(on, float) and np.isnan(on))):
+            onsets.append(on)
+        if not (br is None or (isinstance(br, float) and np.isnan(br))):
+            breakups.append(br)
+    row["onset_mean_h"] = round(float(np.mean(onsets)), 1) if onsets else np.nan
+    row["breakup_mean_h"] = round(float(np.mean(breakups)), 1) if breakups else np.nan
     return row
 
 
@@ -126,6 +136,41 @@ def _per_winter(g: pd.DataFrame) -> dict:
     return {str(r["test_winter"]): {"onset": r["onset_err_h"],
                                     "breakup": r["breakup_err_h"]}
             for _, r in g.iterrows()}
+
+
+GUARD_TAG = {"none": "", "meanair": " +meanair guard", "afdd": " +AFDD guard"}
+
+
+def _reextract_rows(results_dir: Path, station: str, winters: list[str]) -> list[dict]:
+    """Temporal + per-frame rows from the guard audit (reextract_events), three
+    guard variants per encoder. Preferred over the tagged phase3 CSVs when
+    present: probabilities are identical, but events come from the audited
+    guard implementations and the calibration is written into the CSV."""
+    f = results_dir / "reextract" / "timing.csv"
+    if not f.exists():
+        return []
+    df = pd.read_csv(f)
+    df = df[(df["reference"] == REF) & (df["station"] == station)
+            & (df["head"] == HEAD)]
+    if df.empty:
+        return []
+    label = {"vjepa2": "V-JEPA", "dinov2": "DINOv2"}
+    rows = []
+    for enc in ("vjepa2", "dinov2"):
+        for guard in ("none", "meanair", "afdd"):
+            g = df[(df["encoder"] == enc) & (df["model"] == "temporal_head")
+                   & (df["guard"] == guard)]
+            if g.empty:
+                continue
+            rows.append(_err_row(
+                f"{label[enc]} temporal ({HEAD.upper()}{GUARD_TAG[guard]})",
+                _per_winter(g), winters))
+    for enc in ("vjepa2", "dinov2"):
+        g = df[(df["encoder"] == enc) & (df["model"] == "perframe_probe")
+               & (df["guard"] == "none")]
+        if not g.empty:
+            rows.append(_err_row(f"per-frame ({label[enc]})", _per_winter(g), winters))
+    return rows
 
 
 def _phase3_rows(results_dir: Path, winters: list[str]) -> list[dict]:
@@ -222,7 +267,8 @@ def _ricenet_rows(results_dir: Path, refs: dict, station: str,
 def build_table(results_dir: Path, station: str, winters: list[str]) -> pd.DataFrame:
     refs = load_references(results_dir)
     rows = []
-    rows += _phase3_rows(results_dir, winters)
+    rows += (_reextract_rows(results_dir, station, winters)
+             or _phase3_rows(results_dir, winters))
     rows += _changepoint_rows(results_dir, refs, station, winters)
     rows += _ricenet_rows(results_dir, refs, station, winters)
     if not rows:
@@ -231,33 +277,41 @@ def build_table(results_dir: Path, station: str, winters: list[str]) -> pd.DataF
     cols = ["method"]
     for w in winters:
         cols += [f"{w} onset", f"{w} breakup"]
-    cols += ["mean_err_h"]
+    cols += ["onset_mean_h", "breakup_mean_h"]
     return pd.DataFrame(rows)[cols]
 
 
 def gate_b(table: pd.DataFrame) -> None:
-    def mean_for(name: str):
-        m = table[table["method"] == name]["mean_err_h"]
-        return float(m.iloc[0]) if len(m) and not np.isnan(m.iloc[0]) else None
+    def means_for(name: str):
+        m = table[table["method"] == name]
+        if m.empty:
+            return None
+        r = m.iloc[0]
+        return (float(r["onset_mean_h"]) if pd.notna(r["onset_mean_h"]) else None,
+                float(r["breakup_mean_h"]) if pd.notna(r["breakup_mean_h"]) else None)
 
     H = HEAD.upper()
     print("\n================ GATE B (H2): V-JEPA vs DINOv2 ================")
+    print("(onset and breakup compared separately; pooled means are banned)")
 
     def compare(tag: str, suffix: str) -> None:
-        v = mean_for(f"V-JEPA temporal ({H}{suffix})")
-        d = mean_for(f"DINOv2 temporal ({H}{suffix})")
+        v = means_for(f"V-JEPA temporal ({H}{suffix})")
+        d = means_for(f"DINOv2 temporal ({H}{suffix})")
         if v is None or d is None:
             print(f"  [{tag}] cannot decide -- missing a temporal row.")
             return
-        verdict = (f"V-JEPA beats DINOv2 by {d - v:.1f} h" if v < d
-                   else f"V-JEPA ties/loses DINOv2 by {v - d:.1f} h")
-        print(f"  [{tag}] V-JEPA {v:.1f} h vs DINOv2 {d:.1f} h  ->  {verdict}")
+        for event, vv, dd in (("onset", v[0], d[0]), ("breakup", v[1], d[1])):
+            if vv is None or dd is None:
+                print(f"  [{tag}] {event:7s}: missing values"); continue
+            verdict = (f"V-JEPA beats DINOv2 by {dd - vv:.1f} h" if vv < dd
+                       else f"V-JEPA ties/loses DINOv2 by {vv - dd:.1f} h")
+            print(f"  [{tag}] {event:7s}: V-JEPA {vv:.1f} h vs DINOv2 {dd:.1f} h  ->  {verdict}")
 
-    compare("TCN +guard ", " +guard")
-    compare("TCN no-guard", "")
-    print("Note: the freezing guard is a domain prior applied identically to both "
-          "encoders; it changes V-JEPA's onset but not DINOv2's, so any V-JEPA win is "
-          "guard-dependent. Report both rows honestly. Human makes the call.")
+    for guard, suffix in GUARD_TAG.items():
+        compare(f"TCN guard={guard:7s}", suffix)
+    print("Note: guard=none is the primary H2 evidence (plan v2 addendum 3); the "
+          "in-station comparison is guard-confounded either way, and the guard-free "
+          "transfer station is the cleanest H2 signal. Human makes the call.")
 
 
 def main() -> None:

@@ -1,12 +1,78 @@
 # STATUS.md — working status of FM_ice
 
-Last updated: 2026-06-20. Companion to IMPLEMENTATION_PLAN.md (the plan) and
-DATA.md (the data spec). This file tracks *what is actually done* right now.
+Last updated: 2026-07-03. Companion to docs/FM_ice_plan_v2.md (the plan of
+record; IMPLEMENTATION_PLAN.md is superseded) and DATA.md (the data spec).
+This file tracks *what is actually done* right now.
 
 **Phase 1 (Data assembly) is essentially complete.** Downloads, clip assembly,
 per-clip labels, per-clip QC, and reference events are done and verified. The
 only open item is *running* the RIce-Net baseline (Acceptance #2), which needs an
 external model + weights — see "Open decision" below.
+
+---
+
+## Plan-v2 task list (2026-07-03 session, merged to main one PR at a time)
+
+1. DONE — phase4-gate-b merged to main (metrics self-test passed first);
+   docs/FM_ice_plan_v2.md + docs/IDEAS.md committed to main.
+2. DONE — CLAUDE.md repointed to plan v2; IMPLEMENTATION_PLAN.md marked SUPERSEDED.
+3. DONE — guard audit + AFDD re-derivation (section below).
+4. pending — entropy_jam.py smoke test.
+5. pending — chippewa_bruce + mohawk_schenectady stations + downloads.
+6. pending — degree-day baseline; BOCPD row verification.
+7. pending — RIce-Net, hard half-day cap.
+
+## Guard audit (plan-v2 addendum item 2) — DONE 2026-07-03
+
+**How the freezing guard was derived.** `onset_freeze_guard_c: 0.0` is the
+physical freezing point, hardcoded in configs/pipeline.yaml — not fitted to any
+data and not a calendar-date window. HOWEVER: (a) it was introduced in a single
+commit (d2f23ac) *after* all three station-winters — including both LOO test
+folds and the bismarck transfer winter — had been scored, so the decision to
+INCLUDE the guard was made with test results visible; (b) it filters sustained
+runs for onset AND breakup, though its physical rationale is onset-only.
+Verdict: value is a prior, inclusion was test-visible ⇒ re-derived blind.
+
+**Re-derivation (AFDD).** New `fm_ice.data.degree_days` + `read_events(...,
+afdd, min_onset_afdd)`: onset can only fire after accumulated freezing
+degree-days exceed tau = 0.5 x min(AFDD at reference onset) over CALIBRATION
+winters — cedarburg train winters only, leave-one-out respected per fold
+(scoring winter W calibrates on the OTHER cedarburg winter; bismarck calibrates
+on both). Onset-only; breakup is never gated. A run straddling arming keeps its
+true start. No retraining: head probabilities are guard-invariant, so events
+were re-read from the existing pred dumps (`fm_ice.evaluation.reextract_events`
+→ results/reextract/timing.csv; the meanair rows reproduce the published
+446 h / 1146 h cedarburg 2022-2023 onsets exactly).
+
+**Gate B rerun (results/phase4_h2_table.csv), onset / breakup SEPARATE, hours
+vs usgs_ice_flag, cedarburg LOO:**
+
+| method (TCN) | 22-23 onset | 22-23 brkup | 23-24 onset | 23-24 brkup | onset mean | brkup mean |
+|---|---|---|---|---|---|---|
+| V-JEPA no guard | 1146 | 2 | 18 | 22 | 582 | 12 |
+| V-JEPA +meanair (legacy) | 446 | 2 | 18 | 22 | 232 | 12 |
+| V-JEPA +AFDD (blind) | 738 | 2 | 1118 | 22 | 928 | 12 |
+| DINOv2 no guard | 710 | 2 | 22 | 30 | 366 | 16 |
+| DINOv2 +meanair | 710 | 2 | 22 | 30 | 366 | 16 |
+| DINOv2 +AFDD | 710 | 2 | 1122 | 30 | 916 | 16 |
+
+**Reading.** (1) Guard-free (primary evidence): DINOv2 wins onset by 216 h,
+V-JEPA wins breakup by 4 h — in-station H2 is negative-to-mixed. (2) The legacy
+meanair guard is the ONLY variant under which V-JEPA wins onset; that win does
+not survive the audit. (3) The blind AFDD guard hurts BOTH encoders on
+2023-2024: the true onset is a short late-November cold-snap run (Nov 28–30,
+AFDD 14.7) followed by a mild December (AFDD flat ~24 until Dec 12), so the
+fold-blind tau of 29.5 kills the genuine onset run. With two train winters the
+calibration is too brittle; the deliberate choice is to report this honestly
+rather than tune the fraction post-hoc. (4) Breakup is guard-independent
+everywhere, as expected from an onset-only prior. Consequence for the paper:
+the freezing guard is dropped from the headline method; guard rows stay in the
+ablation. The cleanest H2 evidence remains the guard-free bismarck transfer
+(V-JEPA 18/122 vs DINOv2 22/150 onset/breakup).
+
+**Known pooled-mean remnants (flagged, not yet fixed):** transfer.py
+`cedarburg_loo_mean`/`transfer_gap_h` and phase3_summary.csv still pool
+onset+breakup internally; phase4_h2_table.csv and GATE B no longer do.
 
 ---
 
