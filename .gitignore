@@ -3,15 +3,25 @@ data/raw/
 data/interim/
 data/processed/
 data/cache/
+data/external/
 results/
 *.npy
 *.parquet
 *.pt
+*.pth
 *.ckpt
 
 # Stray model checkpoints
 sam2_hiera_*.pt
 *.mp4
+
+# Runtime logs and local watch helpers (cluster job stdout/stderr)
+logs/
+scripts/_watch_*.sh
+
+# LaTeX build artifacts (keep .tex and .pdf only)
+*.aux
+docs/*.log
 
 # Python
 __pycache__/

@@ -1,0 +1,249 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs,xcolor,amsmath}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+\newcommand{\hh}[1]{\textbf{\color{black!80}#1}}
+
+\title{\vspace{-2.5em}Temporal Foundation--Model Detection of River--Ice Onset and Breakup\\[2pt]
+\large Interim Discussion: Results to Date, and Predictions for the Next Phases}
+\author{FM\_ice project --- working note}
+\date{2026-06-21}
+
+\begin{document}
+\maketitle
+\vspace{-1.5em}
+
+\section*{Summary}
+We detect river--ice \emph{onset} and \emph{breakup} from time-lapse camera imagery with a
+light temporal head trained on \emph{frozen} video foundation--model (V-JEPA~2) embeddings,
+benchmarked against an image foundation model (DINOv2) and a published per-frame threshold
+baseline (RIce-Net). The contribution is a measured result --- event-timing error --- not an
+architecture. Status: data, embeddings, and the static separability gate are complete; the
+temporal head (Phase~3) is trained and evaluated; the change-point baselines, transfer test,
+and evaluation/figures code (Phases~4--6) are written and pending experiments.
+
+\textbf{Headline so far.} On a leave-one-winter-out split of the training station (Cedarburg),
+the temporal head reads \emph{breakup} to within \textbf{2--22\,h} of the USGS ice flag, and
+\emph{onset} to within \textbf{18\,h} on one winter. Onset on the other winter is degraded by an
+early-season (November) appearance confound; a physically-motivated freezing guard cuts that
+error roughly in half. The best configuration (V-JEPA, TCN, freezing guard) averages
+\textbf{122\,h} timing error and beats both the per-frame anchor (494\,h) and DINOv2 (191\,h) ---
+a \emph{tentative positive} signal for the video model on the timing axis, opposite to the
+static-separability result below. All numbers are from $n=2$ winters and are directional.
+
+\section{Problem and hypotheses}
+The encoder is frozen; only a small temporal head trains, on CPU. Four hypotheses drive the work:
+\begin{itemize}\itemsep1pt
+\item[\hh{H1}] Temporal modeling on FM embeddings beats per-frame thresholding on timing error.
+\item[\hh{H2}] Video-FM (V-JEPA) beats image-FM (DINOv2) for this task.
+\item[\hh{H3}] FM embeddings separate ice from open water across lighting better than pixels.
+\item[\hh{H4}] (optional) A forecast head gives non-trivial lead time before onset.
+\end{itemize}
+
+\section{Data and evaluation protocol}
+Two stations, hourly overlay imagery, with USGS daily ice flags as the solid reference and a
+stage (gage-height) change-point series as a rough cross-check. A \emph{clip} is 16 hourly frames,
+4\,h stride (frozen after embeddings were cached). Per clip we cache one 1024-d embedding for each
+encoder.
+
+\begin{center}\small
+\begin{tabular}{llrr}
+\toprule
+Station & Winter(s) & Clips (ice\%) & Role \\
+\midrule
+Cedarburg & 2022--2023 & 1099 (24\%) & train \\
+Cedarburg & 2023--2024 & 1173 (13\%) & train \\
+Bismarck  & 2024--2025 & 1130 (52\%) & transfer test (held out) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Split deviation (deliberate).} The plan specifies holding out winter 2024--2025 on the
+train station, but Cedarburg has only two winters and 2024--2025 belongs to Bismarck, the
+reserved transfer station. We therefore evaluate the train station by \emph{leave-one-winter-out}
+on Cedarburg and touch Bismarck only in the Phase~5 transfer test. With two winters there is no
+separate validation split, so the head trains for a fixed number of epochs with config
+hyperparameters and no test peeking.
+
+\section{Results to date}
+
+\subsection{H3 --- GATE A: static ice/water separability (PASS, both encoders)}
+A linear probe on frozen embeddings, scored out-of-fold with time-blocked cross-validation
+(clips overlap, so random folds would leak), separates ice from open water strongly and the
+separation survives lighting changes (Table~\ref{tab:gatea}). Both encoders PASS. Critically,
+\emph{H2 is negative at this gate}: DINOv2 ties or slightly beats V-JEPA on pooled and especially
+night AUC. Reading: \emph{per-clip} ice/water discrimination is an appearance problem, not a
+motion problem --- which is exactly what an image FM is built for.
+
+\begin{table}[h]\centering\small
+\caption{GATE A pooled / night ROC-AUC of a linear probe (out-of-fold, time-blocked).
+``light-only'' is a night-fraction$+$brightness baseline: the embedding margin over it is the
+honest signal.}\label{tab:gatea}
+\begin{tabular}{lccc}
+\toprule
+Station-winter & V-JEPA pooled/night & DINOv2 pooled/night & light-only \\
+\midrule
+Cedarburg 2022--2023 & 0.927 / 0.909 & 0.973 / \textbf{0.974} & 0.868 \\
+Cedarburg 2023--2024 & \textbf{0.983} / 0.944 & 0.973 / \textbf{0.946} & 0.893 \\
+Bismarck 2024--2025  & 0.946 / \textbf{0.920} & 0.959 / 0.918 & 0.703 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{H1 --- the temporal head (Phase 3)}
+The head (default: MS-TCN-style dilated temporal conv, class-balanced BCE $+$ smoothing loss)
+emits a per-step ice-state probability; onset and breakup are read off as the first and last
+\emph{sustained} ice runs, mirroring the reference's run-length rule. Table~\ref{tab:h1} gives
+timing error vs the USGS ice flag.
+
+\begin{table}[h]\centering\small
+\caption{Onset / breakup timing error in hours vs the USGS ice flag (leave-one-winter-out on
+Cedarburg; lower is better). ``+guard'' applies the physical freezing guard.}\label{tab:h1}
+\begin{tabular}{lccccc}
+\toprule
+ & \multicolumn{2}{c}{2022--2023} & \multicolumn{2}{c}{2023--2024} & \\
+Model & onset & breakup & onset & breakup & mean \\
+\midrule
+V-JEPA TCN \hh{+guard}      & \textbf{446} & 2 & \textbf{18} & 22 & \textbf{122} \\
+V-JEPA TCN (no guard)       & 1146 & 2 & 18 & 22 & 297 \\
+DINOv2 TCN                  & 710  & 2 & 22 & 30 & 191 \\
+V-JEPA per-frame (anchor)   & 726  & 70 & 1122 & 58 & 494 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textit{[Figure \texttt{fig\_timing.png}: onset vs breakup timing error, mean over the two
+held-out winters, log scale --- saved in \texttt{results/figures/discussion/}.]}
+
+Two robust observations. \hh{(1) Breakup is essentially solved} (2--22\,h) for the temporal head:
+spring ice-out is an abrupt, well-lit appearance change. \hh{(2) Onset is bimodal.} On 2023--2024
+the head nails it (18\,h); on 2022--2023 it fires a false ``ice'' block in November, weeks before
+the real December onset. This appears for \emph{both} encoders and even for the linear per-frame
+probe, so it is a feature/label-transfer confound --- November scenes (low sun, leaf-off, dark
+water) look ice-like to a probe trained on the other winter --- not merely head overfitting.
+
+\textbf{The freezing guard.} River ice does not persist while the air is well above freezing, so a
+sustained ice run only counts if its mean air temperature is at or below $0^\circ$C --- a domain
+prior, not a fit-to-test threshold. It moves the 2022--2023 predicted onset from Nov~1 to Nov~30
+(reference: Dec~19), cutting that error from 1146\,h to 446\,h and making V-JEPA$+$TCN$+$guard the
+best model overall.
+
+\textit{[Figure \texttt{fig\_nov\_guard.png}: the head's $P(\text{ice})$ rises in warm November
+before the true December ice season; the guard rejects the warm-mean run and shifts the predicted
+onset from Nov~1 to Nov~30, within $\sim$19 days of the Dec~19 reference --- saved in
+\texttt{results/figures/discussion/}.]}
+
+\textbf{H1 verdict (interim).} For V-JEPA the temporal head clearly beats its per-frame anchor
+(122 vs 494\,h mean; on 2023--2024 onset, 18 vs 1122\,h --- the head catches a brief late-November
+freeze the per-frame probe misses entirely). H1 is \emph{supported but fragile} at $n=2$.
+
+\subsection{H2 --- V-JEPA vs DINOv2 on timing}
+On the timing axis the best V-JEPA head (122\,h) edges DINOv2 (191\,h), driven by the guard's
+larger effect on V-JEPA's November confound. This is a \emph{tentative reversal} of the negative
+static GATE-A result: motion/temporal context may help where per-clip appearance does not. It is
+not decisive --- the gap rests on one winter and one post-hoc guard. The clean H2 comparison is
+Phase~4 (identical head, identical splits, plus change-point and RIce-Net rows) and GATE~B.
+
+\subsection{RIce-Net anchor --- paused}
+The published RIce-Net weights are downloaded and the pipeline is wired, but the model ships as a
+\emph{pickled full object} (arbitrary-code execution on load) and is incompatible with the
+installed \texttt{segmentation-models-pytorch} (decoder internals changed). Running it was paused
+pending a decision on (a) authorizing the unpickle of the official artifact and (b) pinning the
+library version vs.\ rebuilding from the state dict. Until then, the per-frame probe serves as the
+available H1 anchor.
+
+\section{Discussion}
+\textbf{Why breakup is easy and onset is hard.} Breakup is a sharp, high-contrast, well-lit
+transition (ice $\rightarrow$ moving open water); both the appearance signal and the label are
+crisp. Onset is gradual (frazil, skim ice, freeze--thaw stutter), happens in the darkest, lowest-sun
+part of the year, and its label (a daily flag) is coarse relative to the real physical transition.
+The dominant error mode is therefore a \emph{warm-season appearance confound at onset}, which is
+why a physical temperature prior --- not a bigger model --- is the right lever.
+
+\textbf{The H2 tension is the interesting result.} Static separability favors the image model
+(DINOv2); timing, tentatively, favors the video model (V-JEPA). If this holds with proper
+baselines, the project's thesis sharpens: video-FM's value here is \emph{temporal}, not per-frame,
+and the honest way to show it is the event-timing table, not a separability AUC.
+
+\textbf{Core limitation: label scarcity.} Two training winters means one onset and one breakup
+event each; every number is directional, and a single confounded November dominates the onset
+average. This is the project's named risk, and it is why the design leans on frozen features, a
+light head, label-free change-point baselines, and a physical prior.
+
+\section{Next steps and predictions}
+Phases~4--6 code is written and import-clean; the remaining work is to run it.
+
+\begin{table}[h]\centering\small
+\caption{Predictions for the next phases (with rough confidence).}\label{tab:pred}
+\begin{tabular}{p{0.30\textwidth}p{0.52\textwidth}c}
+\toprule
+Step & Prediction & Conf. \\
+\midrule
+RIce-Net baseline (resolve pickle) & Temporal head beats RIce-Net on breakup clearly; competitive
+on onset. RIce-Net's own threshold will also stumble on the warm-November confound. & med \\
+Phase 4: change-point + GATE~B & BOCPD/BEAST on the embedding stream find breakup well, onset
+poorly (same confound, no temperature prior). GATE~B: V-JEPA $\geq$ DINOv2 on timing but within
+noise $\Rightarrow$ reframe as ``temporal beats threshold.'' & med \\
+Phase 5: transfer to Bismarck & Breakup transfers (small gap); onset gap larger. Bismarck is
+\emph{icier} (52\%) and colder, so the freezing guard helps more and pooled timing may actually be
+competitive despite zero Bismarck training. & med-low \\
+Onset improvement & The freezing guard $+$ a third winter (or station pooling) is worth more than
+any head change. A learned temperature gate or a forecast head (H4) is the natural extension. & med \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Concrete actions, in order.} (1) Decide the RIce-Net unpickle/version question and run the
+anchor. (2) Run Phase~4 change-point baselines and assemble the single H2 table; call GATE~B.
+(3) Run the Phase~5 transfer test and report the gap honestly. (4) Generate the Phase~6 metrics,
+error-analysis, and H3/timeline figures. (5) Only then consider H4 (forecast lead time), and only
+if it does not threaten the MVP freeze.
+
+\section*{Phase~5 transfer test (measured, held-out station)}
+The temporal head, per-frame probe, and feature scaler are fit on \emph{both} Cedarburg winters
+only; Bismarck 2024--2025 is transformed and predicted with no retraining and no statistics fit on
+it (no leakage). Table~\ref{tab:transfer} reports timing error vs the USGS ice flag, with the
+Cedarburg leave-one-winter-out (LOO) mean as the anchor and the gap defined as Bismarck minus that
+anchor.
+
+\begin{table}[h]\centering\small
+\caption{Phase~5 transfer to Bismarck (no retraining). Timing error in hours vs the USGS ice flag;
+lower is better.}\label{tab:transfer}
+\begin{tabular}{lcccc}
+\toprule
+Config & Bismarck onset & Bismarck breakup & Cedarburg LOO mean & Gap (mean) \\
+\midrule
+V-JEPA / TCN / +guard      & \textbf{18} & 122 & 122 & $-52$ \\
+V-JEPA / TCN (no guard)    & 18 & 122 & 297 & $-227$ \\
+DINOv2 / TCN ($\pm$guard)  & 22 & 150 & 191 & $-105$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{What actually happened (vs the prediction in Table~\ref{tab:pred}).} The prediction was
+\emph{inverted}. We expected breakup to transfer with a small gap and onset to show the larger gap;
+instead \emph{onset} transfers essentially perfectly (18--22\,h on a station the model never saw)
+while \emph{breakup} is the harder transfer (122--150\,h, vs 2--22\,h on Cedarburg). The head also
+beats the per-frame probe on Bismarck onset (18\,h vs 306\,h), so H1 generalizes off-station.
+
+\textbf{The freezing guard is Cedarburg-specific.} Bismarck onset is 18\,h with or without the
+guard: the icier ($52\%$), colder station has no warm-November false positive for the guard to
+remove. The guard only moves the Cedarburg anchor (122 vs 297\,h), which is why the V-JEPA gap
+differs by row. The negative gaps are real but partly an artifact of the Nov-2022 confound
+inflating the Cedarburg onset average --- the absolute Bismarck errors are the honest headline.
+
+\textbf{A cleaner H2 than GATE~B.} On the held-out station V-JEPA beats DINOv2 on both events
+(onset 18 vs 22\,h, breakup 122 vs 150\,h; per-frame AUC 0.99 vs 0.98), and, unlike the
+guard-dependent Cedarburg GATE~B, this does \emph{not} rest on the freezing guard. The transfer
+test gives the project its clearest video-FM\,$>$\,image-FM evidence. With Phase~5 complete, the
+MVP is frozen.
+
+\section*{Honest caveats}
+$n=2$ winters; no validation split; the freezing guard is a sensible prior but its $0^\circ$C
+threshold is a choice; the H2 timing edge rests on one winter and one guard; the stage change-point
+reference is crude (it mis-dates a late-February freshet as onset) and is used only as a
+cross-check. None of these are hidden in the averages above --- they \emph{are} the averages, and
+the per-winter, per-event numbers are reported alongside.
+
+\end{document}

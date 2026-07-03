@@ -15,6 +15,10 @@ defaults:
   # Freeze season window to download per winter. Trim to cut summer volume.
   season_start_md: "11-01"   # Nov 1
   season_end_md:   "05-15"   # May 15 (next year)
+  # USGS daily values (the ice flag) are computed on the LOCAL STANDARD-TIME day.
+  # Both stations report tz_cd=CST (NWIS), i.e. UTC-6 year-round (no DST) for the
+  # daily-value boundary. A clip's UTC time is shifted by this to find its ice day.
+  usgs_dv_utc_offset_hours: -6
   image_size: overlay        # overlay = full-size, small = 720px, thumb = ~200px
   hivis_api_base: "https://api.waterdata.usgs.gov/nims/v0"
   nwis_iv_base:   "https://waterservices.usgs.gov/nwis/iv/"
@@ -28,12 +32,26 @@ stations:
     nwis_id: "04086600"
     name: "Milwaukee River near Cedarburg, WI"
     timezone: "US/Central"
+    # Authoritative coords from the NWIS site service (siteOutput=expanded),
+    # verified 2026-06-20. Used for solar-elevation (day/night) QC only.
+    lat: 43.28027778
+    lon: -87.9425
     cameras:
       primary:
         cam_id: "WI_Milwaukee_River_near_Cedarburg"
         ingest_period: "247"     # 24/7 capture
         interval_min: 60
         archive_start: "2022-09-12"
+        # RIce-Net river mask for THIS camera framing, copied verbatim from
+        # github.com/m-ayyad/RIce-Net utils/config.py (MIT). Cedarburg is the
+        # RIce-Net train+test site, so the mask ships with the release. Polygon is
+        # in 1920x1080 pixel coords; crop is [y0,y1,x0,x1] applied after masking;
+        # pixels is the river-surface count used as the IC(t) denominator. Verify
+        # it overlays current frames before trusting (camera may have been re-aimed).
+        ricenet_mask:
+          polygon: [[1920,418],[1439,378],[931,371],[720,367],[130,644],[226,738],[166,1080],[1920,1080]]
+          crop: [312, null, 128, null]
+          pixels: 614847.0
       downstream:
         cam_id: "WI_Milwaukee_River_near_Cedarburg_DOWNSTREAM"
         ingest_period: "daylight"
@@ -49,6 +67,8 @@ stations:
     nwis_id: "06342500"
     name: "Missouri River at Bismarck, ND"
     timezone: "US/Central"
+    lat: 46.814167
+    lon: -100.821389
     cameras:
       primary:
         cam_id: "ND_Missouri_River_at_Bismarck"

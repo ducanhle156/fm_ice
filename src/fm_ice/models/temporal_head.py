@@ -68,8 +68,9 @@ def smoothing_loss(logits: torch.Tensor) -> torch.Tensor:
     return torch.clamp(d, max=16.0).mean()
 
 
-def total_loss(logits, target, w_smooth: float = 0.15):
-    bce = F.binary_cross_entropy_with_logits(logits, target.float())
+def total_loss(logits, target, w_smooth: float = 0.15, pos_weight=None):
+    """BCE (optionally class-balanced via pos_weight) + MS-TCN smoothing."""
+    bce = F.binary_cross_entropy_with_logits(logits, target.float(), pos_weight=pos_weight)
     return bce + w_smooth * smoothing_loss(logits)
 
 
