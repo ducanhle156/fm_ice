@@ -17,7 +17,7 @@ external model + weights — see "Open decision" below.
    docs/FM_ice_plan_v2.md + docs/IDEAS.md committed to main.
 2. DONE — CLAUDE.md repointed to plan v2; IMPLEMENTATION_PLAN.md marked SUPERSEDED.
 3. DONE — guard audit + AFDD re-derivation (section below).
-4. pending — entropy_jam.py smoke test.
+4. DONE — entropy_jam.py smoke test (section below).
 5. pending — chippewa_bruce + mohawk_schenectady stations + downloads.
 6. pending — degree-day baseline; BOCPD row verification.
 7. pending — RIce-Net, hard half-day cap.
@@ -73,6 +73,29 @@ ablation. The cleanest H2 evidence remains the guard-free bismarck transfer
 **Known pooled-mean remnants (flagged, not yet fixed):** transfer.py
 `cedarburg_loo_mean`/`transfer_gap_h` and phase3_summary.csv still pool
 onset+breakup internally; phase4_h2_table.csv and GATE B no longer do.
+
+## Entropy jam smoke test (plan-v2 Sec. 6 + addendum item 4) — DONE 2026-07-03
+
+`fm_ice.evaluation.entropy_jam` (vjepa2/tcn, out-of-fold pred dumps, no
+retraining). tau_H = 0.648 nats = p99 of Bernoulli entropy pooled over the
+cedarburg train winters, FROZEN before any event station is scored. Detector:
+H > tau_H for >= 6 clips chained while above-threshold clips are < 8 h apart
+(timestamp-based; QC holes >= 8 h split windows).
+
+False-alarm table (results/entropy_jam/false_alarm_table.csv) — no jams
+documented in the cached winters, so every detection would be a false alarm:
+
+| station-winter | clips | H > tau_H clips | detections | FAR /100 d |
+|---|---|---|---|---|
+| cedarburg 2022-2023 | 1099 | 19 | 0 | 0.0 |
+| cedarburg 2023-2024 | 1173 | 4 | 0 | 0.0 |
+| bismarck 2024-2025 | 1130 | 16 | 0 | 0.0 |
+
+Zero false alarms: the 24 h persistence rule kills every isolated
+high-entropy clip. Outputs: `results/entropy_jam/<station>_<winter>_entropy.npy`
+(row-aligned to the pred CSVs), `detections.json` (frozen params + windows).
+Caveat for the paper: on the calibration winters ~1% of clips exceed tau_H by
+construction; bismarck (and future stations) are the honest FAR rows.
 
 ---
 
