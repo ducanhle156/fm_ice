@@ -1,0 +1,29 @@
+# RIce-Net baseline environment (SEPARATE venv -- do not install into fm-ice).
+#
+# The published checkpoint (HydroShare 10.4211/hs.ff4e9c4e87ef4d7d923efe77f5ed2b83,
+# segmentation_model.pth) is a pickled FULL smp.PAN object. Unpickling needs
+# (a) torch.load(..., weights_only=False)  -- trusted checkpoint, torch>=2.6
+#     changed the default -- and
+# (b) a segmentation-models-pytorch matching the RIce-Net era: smp 0.5.0 FAILS
+#     (PAN GAUBlock.interpolation_mode changed); smp 0.3.4 + timm 0.9.7 WORKS
+#     (verified 2026-07-03: load + forward pass + full cedarburg winters).
+#
+# Setup:
+#   python -m venv .venv-ricenet
+#   .venv-ricenet/bin/pip install -r requirements-ricenet.txt \
+#       --extra-index-url https://download.pytorch.org/whl/cpu
+#   .venv-ricenet/bin/pip install -e . --no-deps
+#   PYTHONNOUSERSITE=1 .venv-ricenet/bin/python -m fm_ice.baselines.ricenet_baseline \
+#       --station cedarburg --winter 2022-2023
+#
+# torch/torchvision MUST come from the same (cpu) index or torchvision's
+# compiled ops fail at import ("operator torchvision::nms does not exist").
+torch==2.12.1+cpu
+torchvision==0.27.1+cpu
+segmentation-models-pytorch==0.3.4
+timm==0.9.7
+opencv-python-headless
+numpy
+pandas
+pyyaml
+pillow
