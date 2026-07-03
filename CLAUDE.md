@@ -1,8 +1,10 @@
 # CLAUDE.md — guide for Claude Code working in this repo
 
 This repo detects river-ice onset and breakup with a temporal model over frozen
-video foundation-model embeddings. Read IMPLEMENTATION_PLAN.md for the phases and
-DATA.md for the data. This file is the operating manual.
+video foundation-model embeddings. Read docs/FM_ice_plan_v2.md for the plan of
+record (IMPLEMENTATION_PLAN.md is superseded, reference only) and DATA.md for
+the data. This file is the operating manual.
+Do not start H4 or any IDEAS.md item; those are post-freeze.
 
 ## What this project is
 - Contribution is a measured result, not an architecture: beat the RIce-Net
