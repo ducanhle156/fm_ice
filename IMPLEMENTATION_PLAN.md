@@ -1,5 +1,10 @@
 # IMPLEMENTATION_PLAN.md
 
+> **SUPERSEDED (2026-07-02).** The plan of record is `docs/FM_ice_plan_v2.md`.
+> This file is kept for reference only: phases 1-6 below were executed and
+> merged to main, but scope, stations, and schedule now come from plan v2.
+> Do not start H4 or any `docs/IDEAS.md` item; those are post-freeze.
+
 Temporal foundation-model detection of river-ice onset and breakup.
 Executable backlog for an AI coding agent and two human owners. Phases run in
 order. Two decision gates can redirect the work. Freeze the MVP after Phase 5.
