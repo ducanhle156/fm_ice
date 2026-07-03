@@ -84,7 +84,15 @@ events:
   # air temperature is at/below this (deg C). Rejects warm-season appearance
   # false-positives (e.g. a November confound) without touching real winter ice.
   # A domain prior at the freezing point, NOT tuned to the held-out winter.
+  # LEGACY (guard audit 2026-07-03): kept only for the comparison row. Flaws:
+  # it gates breakup runs too, and its inclusion was decided with test folds
+  # already scored. Superseded by the AFDD onset guard below.
   onset_freeze_guard_c: 0.0
+  # AFDD onset guard: onset can only fire after accumulated freezing degree-days
+  # exceed frac * min(AFDD at reference onset) over the CALIBRATION winters
+  # (train winters only; leave-one-out respected per fold). Onset-only --
+  # breakup is never gated. See fm_ice.data.degree_days.calibrate_tau_afdd.
+  afdd_guard_frac: 0.5
 evaluation:
   tolerance_hours: [24, 48, 72]   # event F1 tolerance windows
   references: ["usgs_ice_flag", "stage_breakpoint"]

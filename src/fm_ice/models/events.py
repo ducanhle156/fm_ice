@@ -46,7 +46,8 @@ def sustained_ice_runs(state: np.ndarray, min_run_steps: int):
 
 
 def read_events(times, prob, threshold: float = 0.5, min_run_steps: int = 1,
-                air=None, max_run_mean_air=None) -> dict:
+                air=None, max_run_mean_air=None,
+                afdd=None, min_onset_afdd=None) -> dict:
     """Onset/breakup timestamps from a per-step ice probability sequence.
 
     Parameters
@@ -56,16 +57,28 @@ def read_events(times, prob, threshold: float = 0.5, min_run_steps: int = 1,
     threshold : ice if prob >= threshold.
     min_run_steps : minimum sustained-run length (in steps) for an event to count.
     air : optional per-step air temperature (deg C), same order as `times`.
-    max_run_mean_air : optional physical freezing guard. When set together with
-        `air`, a sustained ice run only counts if its MEAN air temperature is at
-        or below this value. River ice does not form or persist while the air is
-        well above freezing, so this rejects warm-season false-positive ice blocks
-        (e.g. a November appearance confound) without touching genuine winter ice.
-        This is a domain prior, not a fit-to-test threshold; default 0 deg C.
+    max_run_mean_air : LEGACY freezing guard, kept for comparison rows. When set
+        together with `air`, a sustained ice run only counts if its MEAN air
+        temperature is at or below this value. Two documented flaws (see
+        docs/FM_ice_plan_v2.md addendum 2): it gates BREAKUP runs too, and its
+        inclusion was decided with test folds already scored. Superseded by the
+        AFDD guard below; do not combine the two.
+    afdd : optional per-step accumulated freezing degree-days (degC*day), same
+        order as `times` (see fm_ice.data.degree_days.value_at_times).
+    min_onset_afdd : AFDD onset guard, calibrated on TRAIN winters only
+        (degree_days.calibrate_tau_afdd). Onset arms at the first step with
+        afdd >= min_onset_afdd; a sustained run whose END precedes arming cannot
+        be the onset (warm-season false positive), but a run that STRADDLES
+        arming keeps its true start (calibration is deliberately lenient, so a
+        genuine onset just before arming is not delayed). ONSET-ONLY: breakup is
+        read from the unguarded run list -- thaw physics does not care how much
+        freezing accumulated before.
 
     Returns {'onset': Timestamp|None, 'breakup': Timestamp|None,
              'state': np.ndarray, 'n_ice_steps': int}. onset/breakup are None
     when no sustained ice run exists (a winter the head calls open all season).
+    With the AFDD guard, onset can be None while breakup is not (every run ended
+    before arming: the guard calls them all warm-season artifacts).
     """
     t = pd.to_datetime(pd.Series(list(times)), utc=True).to_numpy()
     p = np.asarray(prob, dtype=float)
@@ -80,9 +93,17 @@ def read_events(times, prob, threshold: float = 0.5, min_run_steps: int = 1,
     if not runs:
         return {"onset": None, "breakup": None, "state": state, "n_ice_steps": 0}
 
-    onset_i = runs[0][0]                 # start of the first sustained run
+    onset_runs = runs
+    if afdd is not None and min_onset_afdd is not None:
+        f = np.asarray(afdd, dtype=float)
+        if len(f) != len(p):
+            raise ValueError(f"afdd ({len(f)}) and prob ({len(p)}) length mismatch")
+        armed = np.flatnonzero(f >= min_onset_afdd)
+        t_arm = int(armed[0]) if len(armed) else len(p)   # never armed -> no onset
+        onset_runs = [(i, j) for (i, j) in runs if j > t_arm]
+
+    onset = pd.Timestamp(t[onset_runs[0][0]]) if onset_runs else None
     last_end = runs[-1][1]               # end-exclusive of the last sustained run
-    onset = pd.Timestamp(t[onset_i])
     # breakup = first step after the last sustained ice run; None if that run
     # reaches the end of the window (still frozen when observation stops).
     breakup = pd.Timestamp(t[last_end]) if last_end < len(t) else None
@@ -115,4 +136,21 @@ if __name__ == "__main__":
     evg = read_events(times, prob, threshold=0.5, min_run_steps=3,
                       air=air, max_run_mean_air=0.0)
     assert evg["onset"] == times[10], evg["onset"]   # warm first run dropped
+
+    # AFDD guard, onset-only. Runs (min 3 steps): 5..8 and 10..12.
+    # (a) run entirely before arming is skipped; breakup is untouched.
+    afdd_a = np.concatenate([np.zeros(10), np.linspace(10, 30, 10)])  # arms at idx 10
+    eva = read_events(times, prob, threshold=0.5, min_run_steps=3,
+                      afdd=afdd_a, min_onset_afdd=10.0)
+    assert eva["onset"] == times[10], eva["onset"]   # first run (5..8) ends pre-arm
+    assert eva["breakup"] == times[13], eva["breakup"]  # breakup NOT gated
+    # (b) a run STRADDLING arming keeps its true start (lenient by design).
+    afdd_b = np.concatenate([np.zeros(7), np.linspace(10, 30, 13)])   # arms at idx 7
+    evb = read_events(times, prob, threshold=0.5, min_run_steps=3,
+                      afdd=afdd_b, min_onset_afdd=10.0)
+    assert evb["onset"] == times[5], evb["onset"]    # run 5..8 straddles arming
+    # (c) never armed -> onset None, breakup still read from the runs.
+    evc = read_events(times, prob, threshold=0.5, min_run_steps=3,
+                      afdd=np.zeros(20), min_onset_afdd=10.0)
+    assert evc["onset"] is None and evc["breakup"] == times[13]
     print("events self-test OK")
