@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from fm_ice.config import load_yaml, winter_bounds
+from fm_ice.config import load_yaml, station_utc_offset_hours, winter_bounds
 from fm_ice.data.labels import label_clips, load_ice_flags
 from fm_ice.data import qc as qcmod
 
@@ -212,7 +212,7 @@ def run(station: str, winter: str, cam_role: str, do_qc: bool = True) -> None:
     if ice is None:
         print(f"[assemble] {station} {winter}: no ice-flag CSV; labels = NA. "
               f"Run download_ice_flags to populate labels.")
-    clips = label_clips(clips, ice, defaults["usgs_dv_utc_offset_hours"])
+    clips = label_clips(clips, ice, station_utc_offset_hours(station))
 
     # QC: night/glare/occlusion per frame -> usable fraction per clip.
     qc = None

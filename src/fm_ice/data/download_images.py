@@ -159,12 +159,15 @@ def main() -> None:
     ap.add_argument("--cam-role", default="primary", help="camera role within the station (default: primary)")
     ap.add_argument("--winter", help="e.g. 2024-2025")
     ap.add_argument("--all-winters", action="store_true", help="download every winter listed for the station")
-    ap.add_argument("--size", default="overlay", choices=list(SIZE_TO_DIR), help="overlay=full, small=720px, thumb")
+    ap.add_argument("--size", default=None, choices=list(SIZE_TO_DIR),
+                    help="image tier; default: defaults.image_size from stations.yaml")
     ap.add_argument("--out", default="data/raw/images", help="output root")
     ap.add_argument("--dry-run", action="store_true", help="print counts and volume only")
     args = ap.parse_args()
 
     stations = load_yaml("stations.yaml")
+    if args.size is None:
+        args.size = stations["defaults"].get("image_size", "small")
     winters = stations["stations"][args.station]["winters"] if args.all_winters else [args.winter]
     if not winters or winters == [None]:
         raise SystemExit("Provide --winter YYYY-YYYY or --all-winters")

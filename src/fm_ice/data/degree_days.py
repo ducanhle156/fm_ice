@@ -31,20 +31,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from fm_ice.config import load_yaml, winter_bounds
+# station_utc_offset_hours is re-exported: callers of this module use it to
+# feed value_at_times / value_at_event.
+from fm_ice.config import load_yaml, station_utc_offset_hours, winter_bounds
 
 
 # --------------------------------------------------------------------------- #
 # Station helpers
 # --------------------------------------------------------------------------- #
-def station_utc_offset_hours(station: str) -> int:
-    """Per-station usgs_dv_utc_offset_hours, falling back to the default."""
-    cfg = load_yaml("stations.yaml")
-    st = cfg["stations"][station]
-    return int(st.get("usgs_dv_utc_offset_hours",
-                      cfg["defaults"]["usgs_dv_utc_offset_hours"]))
-
-
 def station_temp_csv(station: str, winter: str, raw_dir: str | Path = "data/raw") -> Path:
     """Path of the hourly temperature CSV for a station-winter."""
     cfg = load_yaml("stations.yaml")

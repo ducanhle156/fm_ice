@@ -127,7 +127,7 @@ def run(station: str, winter: str) -> list[dict]:
     d = cfg_s["defaults"]
     st = cfg_s["stations"][station]
     nwis = st["nwis_id"]
-    offset = d["usgs_dv_utc_offset_hours"]
+    offset = int(st.get("usgs_dv_utc_offset_hours", d["usgs_dv_utc_offset_hours"]))
     hazard = cfg_p["changepoint"]["bocpd"]["hazard_lambda"]
 
     raw = Path(cfg_p["paths"]["raw"])

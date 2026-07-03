@@ -19,7 +19,10 @@ defaults:
   # Both stations report tz_cd=CST (NWIS), i.e. UTC-6 year-round (no DST) for the
   # daily-value boundary. A clip's UTC time is shifted by this to find its ice day.
   usgs_dv_utc_offset_hours: -6
-  image_size: overlay        # overlay = full-size, small = 720px, thumb = ~200px
+  # Fixed decision, plan v2 Sec. 2: `small` (720 px) tier. CAVEAT: the cedarburg
+  # and bismarck embedding caches (phases 1-6) were extracted from overlay-tier
+  # frames before this change; plan v2 forbids re-extraction for marginal gains.
+  image_size: small          # overlay = full-size, small = 720px, thumb = ~200px
   hivis_api_base: "https://api.waterdata.usgs.gov/nims/v0"
   nwis_iv_base:   "https://waterservices.usgs.gov/nwis/iv/"
   nwis_dv_base:   "https://waterservices.usgs.gov/nwis/dv/"
@@ -61,6 +64,65 @@ stations:
     asos_station: "MWC"          # Milwaukee Lawrence J Timmerman, ~17 km S
     asos_alternates: ["ETB", "MKE"]   # West Bend ~18 km N; Mitchell Intl ~30 km SE
     winters: ["2022-2023", "2023-2024", "2024-2025", "2025-2026"]
+
+  # Added 2026-07-03 per plan v2 Sec. 3. Camera fields verified against the live
+  # HIVIS API (cameras?siteId=05356500) on 2026-07-03.
+  chippewa_bruce:
+    role: train                 # second training river, 4 winters, sheet-ice cycle;
+                                # its winters double as C2 jam-free anchors
+    nwis_id: "05356500"
+    name: "Chippewa River near Bruce, WI"
+    timezone: "US/Central"
+    # From the HIVIS camera record (authoritative for the camera location).
+    lat: 45.4521867
+    lon: -91.2609878
+    cameras:
+      primary:
+        cam_id: "WI_Chippewa_River_near_Bruce"
+        ingest_period: "247"
+        interval_min: 60
+        archive_start: "2022-10-06"
+    # Nearest IEM ASOS/AWOS (verified via network geojson 2026-07-03).
+    asos_station: "RCX"          # Ladysmith, ~21 km NE
+    asos_alternates: ["Y23", "RPD"]   # Chetek ~33 km SW; Rice Lake ~40 km W
+    winters: ["2022-2023", "2023-2024", "2024-2025", "2025-2026"]
+
+  # Added 2026-07-03 per plan v2 Sec. 3. The site has 15 HIVIS cameras; 13 are
+  # hidden PTZ presets whose archives went stale in Nov-Dec 2024. Only the two
+  # below are live. DEVIATION from the plan registry (noted in STATUS.md): the
+  # live fixed camera started 2023-09-18, not 2024-09-27 (that date belongs to
+  # the stale PTZ cams), so THREE camera winters exist, not two.
+  mohawk_schenectady:
+    role: event_test            # USGS Mohawk River Ice Jam Monitoring reach
+    nwis_id: "01354500"
+    name: "Mohawk River at Freemans Bridge, Schenectady NY"
+    timezone: "US/Eastern"
+    # EST is UTC-5 (the default -6 is CST); daily ice flags and reference
+    # events bucket on the local-standard day.
+    usgs_dv_utc_offset_hours: -5
+    # From the HIVIS camera record.
+    lat: 42.83052778
+    lon: -73.93075
+    cameras:
+      primary:
+        cam_id: "NY_Mohawk_River_at_Freemans_Bridge_at_Schenectady"
+        ingest_period: "daylight"
+        interval_min: 60
+        archive_start: "2023-09-18"
+      stockade:
+        # Second live viewpoint on the reach (Stockade neighborhood), 24/7 at
+        # 5-min cadence. Not downloaded by default; candidate for the IDEAS
+        # second-viewpoint robustness row (post-freeze).
+        cam_id: "NY_Mohawk_River_at_Stockade_at_Schenectady"
+        ingest_period: "247"
+        interval_min: 5
+        archive_start: "2024-08-21"
+    # SCH (Schenectady Airport, 2 km) is part-time: only ~8 obs/day in
+    # 2024-2025, which biases daily means warm (nights missing). ALB is a
+    # full-time hourly ASOS 13 km away -- verified 4675 obs vs SCH's 1632.
+    asos_station: "ALB"          # Albany Intl, ~13 km SE, 24/7 hourly
+    asos_alternates: ["SCH"]     # Schenectady County Airport, ~2 km N, part-time
+    winters: ["2023-2024", "2024-2025", "2025-2026"]
 
   bismarck:
     role: transfer              # held-out station, short record

@@ -182,7 +182,8 @@ def run_one(encoder: str, station: str, winter: str, method: str, signal: str,
             beast_thresh: float = BEAST_CP_PROB_THRESH) -> dict:
     cfg = load_yaml("pipeline.yaml")
     cfg_s = load_yaml("stations.yaml")
-    offset = cfg_s["defaults"]["usgs_dv_utc_offset_hours"]
+    offset = int(cfg_s["stations"][station].get(
+        "usgs_dv_utc_offset_hours", cfg_s["defaults"]["usgs_dv_utc_offset_hours"]))
     stride = cfg["clip"]["stride_hours"]
     hazard_hours = cfg["changepoint"]["bocpd"]["hazard_lambda"]
     season_period = cfg["changepoint"]["beast"]["season_period"]
