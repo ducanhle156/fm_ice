@@ -20,7 +20,12 @@ external model + weights — see "Open decision" below.
 4. DONE — entropy_jam.py smoke test (section below).
 5. DONE — chippewa_bruce + mohawk_schenectady added; downloads running in the
    background (section below).
-6. pending — degree-day baseline; BOCPD row verification.
+6. DONE — degree-day baseline row filled (`fm_ice.baselines.degreeday`,
+   AFDD/ATDD, train-winter calibration, LOO folds → results/degreeday_events.csv;
+   in the phase4 table: onset mean 936 h, breakup mean 168 h — the weak thermal
+   control, as intended). BOCPD row was NOT empty (plan v2 stale on this):
+   changepoint_events.py + results/changepoint_events.csv already existed and
+   the BOCPD-pc1/diffnorm/BEAST rows are in the regenerated table.
 7. pending — RIce-Net, hard half-day cap.
 
 ## Guard audit (plan-v2 addendum item 2) — DONE 2026-07-03
