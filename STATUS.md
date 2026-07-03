@@ -26,7 +26,8 @@ external model + weights — see "Open decision" below.
    control, as intended). BOCPD row was NOT empty (plan v2 stale on this):
    changepoint_events.py + results/changepoint_events.csv already existed and
    the BOCPD-pc1/diffnorm/BEAST rows are in the regenerated table.
-7. pending — RIce-Net, hard half-day cap.
+7. DONE — RIce-Net UNBLOCKED and run on both cedarburg winters (section below);
+   the named fallback was NOT needed.
 
 ## Guard audit (plan-v2 addendum item 2) — DONE 2026-07-03
 
@@ -145,6 +146,35 @@ Per the plan's pre-written fallback: manual dates from the spot audit for
 test-only stations. Mohawk is `event_test` — its C2 references come from the
 CRREL/dashboard event audit (week 2), so C2 is unaffected; only its
 onset/breakup rows need audited dates. All 4 chippewa (train) winters pass.
+
+## RIce-Net baseline — UNBLOCKED AND RUN 2026-07-03 (was paused since 06-21)
+
+**The fix (11 minutes into the half-day cap; recipe pinned in
+`requirements-ricenet.txt`):** separate venv `.venv-ricenet` with
+`segmentation-models-pytorch==0.3.4` + `timm==0.9.7` + `torch==2.12.1+cpu` /
+`torchvision==0.27.1+cpu` (both from the pytorch cpu index — mixing indexes
+breaks torchvision import), then `torch.load(weights_only=False)` on the
+trusted HydroShare checkpoint. The pickled PAN loads and forward-passes.
+Verified before the full run: 3 classes = {0: masked background, 1: ice,
+2: water}; a peak-winter frame (2023-02-05) segments 83% ice, spring frames 0%.
+Full runs: 4445 + 4704 hourly frames, CPU, ~4-6 h/winter wall (GPFS stalls).
+
+**Events (results/ricenet_events.csv, published 15%/20% + 8 h rule):**
+
+| winter | RIce-Net onset | RIce-Net breakup | onset err | breakup err |
+|---|---|---|---|---|
+| 2022-2023 | 2022-12-04 22:00 | 2022-12-04 23:00 | 344 h | 2023 h |
+| 2023-2024 | 2023-11-27 21:00 | 2023-11-27 22:00 | 15 h | 1592 h |
+
+**Reading (onset and breakup separately, per the reporting rule):** the
+threshold rule is a genuinely strong FIRST-APPEARANCE onset detector — its
+onset mean (179.5 h) is the best onset row in the in-station table, and 15 h
+on 2023-2024 beats everything. But it cannot time breakup at all: "first
+falling edge after onset" fires ONE HOUR after onset on intermittent coverage
+(both winters), giving a 1807.5 h breakup mean vs the temporal head's 12 h.
+Coverage series sanity-checked (correct seasonal structure, max 100%). This is
+the H1 head-to-head the paper needs: threshold coverage rules vs temporal
+reasoning, strongest contrast on breakup.
 
 ---
 

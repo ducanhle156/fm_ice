@@ -27,6 +27,7 @@ docs/*.log
 __pycache__/
 *.pyc
 .venv/
+.venv-ricenet/
 venv/
 *.egg-info/
 .ipynb_checkpoints/
