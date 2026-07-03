@@ -246,6 +246,24 @@ def _changepoint_rows(results_dir: Path, refs: dict, station: str,
     return rows
 
 
+def _degreeday_rows(results_dir: Path, refs: dict, station: str,
+                    winters: list[str]) -> list[dict]:
+    f = results_dir / "degreeday_events.csv"
+    if not f.exists():
+        print(f"[phase4] note: {f.name} absent -- degree-day row omitted "
+              f"(run fm_ice.baselines.degreeday)")
+        return []
+    df = pd.read_csv(f)
+    df = df[df["station"] == station]
+    per = {}
+    for _, r in df.iterrows():
+        ref = refs.get((r["station"], str(r["winter"])))
+        if ref is None:
+            continue
+        per[str(r["winter"])] = _event_err(r["onset_utc"], r["breakup_utc"], ref)
+    return [_err_row("degree-day (AFDD/ATDD)", per, winters)] if per else []
+
+
 def _ricenet_rows(results_dir: Path, refs: dict, station: str,
                   winters: list[str]) -> list[dict]:
     f = results_dir / "ricenet_events.csv"
@@ -270,6 +288,7 @@ def build_table(results_dir: Path, station: str, winters: list[str]) -> pd.DataF
     rows += (_reextract_rows(results_dir, station, winters)
              or _phase3_rows(results_dir, winters))
     rows += _changepoint_rows(results_dir, refs, station, winters)
+    rows += _degreeday_rows(results_dir, refs, station, winters)
     rows += _ricenet_rows(results_dir, refs, station, winters)
     if not rows:
         raise SystemExit("no Phase-4 inputs found in results/ -- run phase 3 + "
